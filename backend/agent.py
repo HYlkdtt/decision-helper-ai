@@ -1,9 +1,9 @@
 import json
 import re
-import os
 
 from groq import AsyncGroq
 
+from .config import GROQ_API_KEY
 from .models import Recommendation
 
 SYSTEM_PROMPT = """You are a decision-making assistant. Help users make better decisions by analyzing pros, cons, consequences, and risks.
@@ -33,7 +33,7 @@ async def get_decision(
     if options:
         user_message += f"\n\nOptions I'm considering: {', '.join(options)}"
 
-    client = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
+    client = AsyncGroq(api_key=GROQ_API_KEY)
 
     messages = [{"role": "system", "content": SYSTEM_PROMPT}]
     messages += history

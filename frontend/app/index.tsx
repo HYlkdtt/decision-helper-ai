@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   View,
   Text,
@@ -11,7 +11,13 @@ import {
   ActivityIndicator,
   SafeAreaView,
 } from "react-native";
-import { Recommendation, sendDecision } from "../services/api";
+import { useLocalSearchParams } from "expo-router";
+import {
+  Recommendation,
+  sendDecision,
+  getSessionMessages,
+  getToken,
+} from "../services/api";
 import ChatBubble from "../components/ChatBubble";
 
 interface Message {
@@ -22,11 +28,47 @@ interface Message {
 }
 
 export default function HomeScreen() {
+  const { sessionId: paramSessionId } = useLocalSearchParams<{
+    sessionId?: string;
+  }>();
+
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadingHistory, setLoadingHistory] = useState(false);
   const flatListRef = useRef<FlatList>(null);
+
+  useEffect(() => {
+    if (paramSessionId && paramSessionId !== sessionId) {
+      loadSession(paramSessionId);
+    }
+  }, [paramSessionId]);
+
+  const loadSession = async (sid: string) => {
+    if (!getToken()) return;
+    setLoadingHistory(true);
+    try {
+      const msgs = await getSessionMessages(sid);
+      const mapped: Message[] = msgs.map((m) => ({
+        id: m.id,
+        role: m.role as "user" | "assistant",
+        text: m.content,
+        recommendation: m.recommendation_json,
+      }));
+      setMessages(mapped);
+      setSessionId(sid);
+    } catch {
+      // fail silently
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
+  const handleNewChat = () => {
+    setMessages([]);
+    setSessionId(null);
+  };
 
   const handleSend = async () => {
     const text = input.trim();
@@ -43,7 +85,12 @@ export default function HomeScreen() {
     setLoading(true);
 
     try {
-      const response = await sendDecision(text, undefined, undefined, sessionId ?? undefined);
+      const response = await sendDecision(
+        text,
+        undefined,
+        undefined,
+        sessionId ?? undefined
+      );
       setSessionId(response.session_id);
 
       const assistantMsg: Message = {
@@ -69,15 +116,32 @@ export default function HomeScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Decision Helper</Text>
-        <Text style={styles.subtitle}>AI-powered decision making</Text>
+        <View style={styles.headerRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.title}>Decision Helper</Text>
+            <Text style={styles.subtitle}>AI-powered decision making</Text>
+          </View>
+          {messages.length > 0 && (
+            <Pressable style={styles.newChatBtn} onPress={handleNewChat}>
+              <Text style={styles.newChatText}>New Chat</Text>
+            </Pressable>
+          )}
+        </View>
       </View>
 
-      {messages.length === 0 ? (
+      {loadingHistory ? (
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color="#3b82f6" />
+          <Text style={styles.loadingText}>Loading conversation...</Text>
+        </View>
+      ) : messages.length === 0 ? (
         <View style={styles.empty}>
-          <Text style={styles.emptyTitle}>What decision do you need help with?</Text>
+          <Text style={styles.emptyTitle}>
+            What decision do you need help with?
+          </Text>
           <Text style={styles.emptyHint}>
-            Describe your situation and I'll analyze the pros, cons, and give you a recommendation.
+            Describe your situation and I'll analyze the pros, cons, and give
+            you a recommendation.
           </Text>
         </View>
       ) : (
@@ -102,7 +166,7 @@ export default function HomeScreen() {
       {loading && (
         <View style={styles.loadingRow}>
           <ActivityIndicator size="small" color="#3b82f6" />
-          <Text style={styles.loadingText}>Analyzing your decision...</Text>
+          <Text style={styles.loadingHint}>Analyzing your decision...</Text>
         </View>
       )}
 
@@ -121,7 +185,10 @@ export default function HomeScreen() {
             onSubmitEditing={handleSend}
           />
           <Pressable
-            style={[styles.sendBtn, (!input.trim() || loading) && styles.sendBtnDisabled]}
+            style={[
+              styles.sendBtn,
+              (!input.trim() || loading) && styles.sendBtnDisabled,
+            ]}
             onPress={handleSend}
             disabled={!input.trim() || loading}
           >
@@ -142,15 +209,36 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "#e2e8f0",
   },
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
   title: { fontSize: 22, fontWeight: "700", color: "#0f172a" },
   subtitle: { fontSize: 13, color: "#64748b", marginTop: 2 },
+  newChatBtn: {
+    backgroundColor: "#f1f5f9",
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  newChatText: { color: "#3b82f6", fontWeight: "600", fontSize: 13 },
+  center: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
   empty: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: 32,
   },
-  emptyTitle: { fontSize: 18, fontWeight: "600", color: "#334155", textAlign: "center" },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#334155",
+    textAlign: "center",
+  },
   emptyHint: {
     fontSize: 14,
     color: "#94a3b8",
@@ -165,7 +253,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingVertical: 8,
   },
-  loadingText: { marginLeft: 8, color: "#64748b", fontSize: 13 },
+  loadingText: { marginTop: 12, color: "#64748b", fontSize: 14 },
+  loadingHint: { marginLeft: 8, color: "#64748b", fontSize: 13 },
   inputRow: {
     flexDirection: "row",
     alignItems: "flex-end",
